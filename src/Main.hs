@@ -82,16 +82,14 @@ runApp = do
   console # "log" $ infinity
   win <- jsg "window"
   openLayers <- win ! "ol"
-  openLayers_layer <- openLayers ! "layer"
-  openLayers_source <- openLayers ! "source"
-  olLayerCtor <- openLayers_layer ! "Tile"
-  olBingMapsCtor <- openLayers_source ! "BingMaps"
+  olLayerCtor <- openLayers ! "layer" >>= (! "Tile")
+  olBingMapsCtor <- openLayers ! "source" >>= (! "BingMaps")
   olLayers <- array ([] :: [JSVal])
   forM_ [minBound..maxBound] $ \(layer :: Layer) -> do
     olBingMapArgs <- obj
-    (olBingMapArgs <# "key") <$> toJSVal "AmNkXbNpoH-6RYX42lfQcNzEXUXBSfDwPHJEAhDNH0EOToN99hKICJ4eq7K35BLh"
+    (olBingMapArgs <# "key") =<< toJSVal "AmNkXbNpoH-6RYX42lfQcNzEXUXBSfDwPHJEAhDNH0EOToN99hKICJ4eq7K35BLh"
     log (pack (show layer))
-    (olBingMapArgs <# "imagerySet") <$> toJSVal (show layer)
+    (olBingMapArgs <# "imagerySet") =<< toJSVal (show layer)
     
     log "new BingMaps"
     olBingMap <- new olBingMapsCtor =<< toJSVal olBingMapArgs
@@ -124,6 +122,7 @@ runApp = do
   win ! "document" >>= (! "body") >>= ($ div) . (# "appendChild")
   olMap <- new olMapCtor =<< toJSVal olMapArgs
   (olLayers !! (0 :: Int) <&> (# "setVisible")) <*> toJSVal True
+  forM_ [1..numLayers-1] $ \i -> (olLayers !! (i :: Int) <&> (# "setVisible")) <*> toJSVal False
   --simple runParDiff (Model olMapNode olLayers Aerial) view getBody
   void $ log "appended map"
 
