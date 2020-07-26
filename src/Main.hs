@@ -9,8 +9,9 @@ module Main where
 
 import           Prelude hiding ( div, (!!) )
 import           Control.Monad ( forM_, join, void )
-import           Text.Read ( readMaybe )
+import           Data.Functor ( (<&>) )
 import           Data.Text hiding ( zip, length )
+import           Text.Read ( readMaybe )
 import           Language.Javascript.JSaddle
 import           Shpadoinkle
 import           Shpadoinkle.Backend.ParDiff
@@ -21,7 +22,7 @@ import           Shpadoinkle.Widgets.Types ( Humanize (..) )
 default (ClassList)
 
 
-data Layer = Aerial | AerialWithLabelsOnDemand | RoadOnDemand | CanvasDark | OrdnanceSurvey
+data Layer = RoadOnDemand | Aerial | AerialWithLabelsOnDemand | CanvasDark | OrdnanceSurvey
   deriving (Eq, Read, Show, Enum, Bounded)
 
 
@@ -77,7 +78,8 @@ runApp = do
   console <- jsg ("console" :: Text)
   let log x = (console # ("log" :: Text)) =<< toJSVal (x :: Text)
   log "running app"
-  infinity <- toJSVal ((1.0/0.0) :: Double)
+  infinity <- eval ("Infinity" :: Text)
+  console # ("log" :: Text) $ infinity
   win <- jsg ("window" :: Text)
   openLayers <- win ! ("ol" :: Text)
   openLayers_layer <- openLayers ! ("layer" :: Text)
@@ -88,12 +90,13 @@ runApp = do
   forM_ [minBound..maxBound] $ \(layer :: Layer) -> do
     olBingMapArgs <- obj
     (olBingMapArgs <# ("key" :: Text)) <$> toJSVal ("AmNkXbNpoH-6RYX42lfQcNzEXUXBSfDwPHJEAhDNH0EOToN99hKICJ4eq7K35BLh" :: Text)
-    (olBingMapArgs <# ("imagerySet" :: Text)) <$> toJSVal (show layer)
+    log (pack (show layer))
+    (olBingMapArgs <# ("imagerySet" :: Text)) <$> toJSVal (pack $ show layer)
     
     log "new BingMaps"
     olBingMap <- new olBingMapsCtor =<< toJSVal olBingMapArgs
     olLayerArgs <- obj
-    olLayerArgs <# ("visible" :: Text) $ False
+    olLayerArgs <# ("visible" :: Text) $ True -- TODO False
     olLayerArgs <# ("preload" :: Text) $ infinity
     (olLayerArgs <# ("source" :: Text)) =<< toJSVal olBingMap
     log "new Tile"
@@ -111,13 +114,25 @@ runApp = do
   olMapArgs <# ("view" :: Text) $ olView
   olMapArgs <# ("layers" :: Text) $ olLayers
   log "new Map"
-  olMapNode <- RawNode <$> (new olMapCtor =<< toJSVal olMapArgs)
-  simple runParDiff (Model olMapNode olLayers Aerial) view getBody
+   -- Insert map directly in DOM and bypass S11 in order to test up to this point
+  log "append map"
+  doc <- win ! ("document" :: Text)
+  bod <- doc ! ("body" :: Text)
+  div <- (doc # ("createElement" :: Text)) =<< toJSVal ("div" :: Text)
+  (div <# ("id" :: Text)) =<< toJSVal ("map" :: Text)
+  (div <# ("className" :: Text)) =<< toJSVal ("map" :: Text)
+  void $ win ! ("document" :: Text) >>= (! ("body" :: Text)) >>= ($ div) . (# ("appendChild" :: Text))
+
+  olMap <- new olMapCtor =<< toJSVal olMapArgs
+  (olLayers !! (0 :: Int) <&> (# ("setVisible" :: Text))) <*> toJSVal True
+  --simple runParDiff (Model olMapNode olLayers Aerial) view getBody
+  void $ log "appended map"
 
 
 main :: IO ()
 main = runJSorWarp 8080 $ do
   addStyle "https://cdn.jsdelivr.net/gh/openlayers/openlayers.github.io@master/en/v6.3.1/css/ol.css"
+  addInlineStyle (".map { width: 100%; height: 500px }" :: Text)
   addScriptSrc "https://cdn.jsdelivr.net/gh/openlayers/openlayers.github.io@master/en/v6.3.1/build/ol.js"
   -- wait for dependencies to load, then run app
   win <- jsg ("window" :: Text)
