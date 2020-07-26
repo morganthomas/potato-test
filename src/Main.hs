@@ -108,7 +108,7 @@ runApp = do
   olView <- new olViewCtor =<< toJSVal olViewArgs
   olMapCtor <- openLayers ! "Map"
   olMapArgs <- obj
-  (olMapArgs <# "target") <$> toJSVal "map"
+  (olMapArgs <# "target") =<< toJSVal "map"
   olMapArgs <# "view" $ olView
   olMapArgs <# "layers" $ olLayers
   log "new Map"
@@ -116,14 +116,17 @@ runApp = do
   log "append map"
   doc <- win ! "document"
   bod <- doc ! "body"
-  div <- doc # "createElement" =<< toJSVal "div"
-  (div <# "id") =<< toJSVal "map"
-  (div <# "className") =<< toJSVal "map"
-  win ! "document" >>= (! "body") >>= ($ div) . (# "appendChild")
+  olMapNode <- doc # "createElement" =<< toJSVal "div"
+  (olMapNode <# "id") =<< toJSVal "map"
+  (olMapNode <# "className") =<< toJSVal "map"
+  win ! "document" >>= (! "body") >>= ($ olMapNode) . (# "appendChild")
   olMap <- new olMapCtor =<< toJSVal olMapArgs
-  (olLayers !! (0 :: Int) <&> (# "setVisible")) <*> toJSVal True
-  forM_ [1..numLayers-1] $ \i -> (olLayers !! (i :: Int) <&> (# "setVisible")) <*> toJSVal False
-  --simple runParDiff (Model olMapNode olLayers Aerial) view getBody
+  l0 <- olLayers !! (0 :: Int)
+  l0 # "setVisible" =<< toJSVal True
+  forM_ [1..numLayers-1] $ \(i :: Int) -> do
+    li <- olLayers !! i
+    li # "setVisible" =<< toJSVal False
+  simple runParDiff (Model (RawNode olMapNode) olLayers Aerial) view getBody
   void $ log "appended map"
 
 
