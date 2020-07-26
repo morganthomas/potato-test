@@ -8,6 +8,7 @@ module Main where
 
 
 import           Prelude hiding ( div, (!!) )
+import           Control.Arrow ( (>>>) )
 import           Control.Monad ( forM_, join, void )
 import           Data.Functor ( (<&>) )
 import           Data.Text hiding ( zip, length )
@@ -53,24 +54,31 @@ view :: MonadJSM m => Model -> HtmlM m Model
 view m =
   div [ id' "page" ] [
     PotatoM (return $ mMap m),
-    select [ id' "layer-select", value (pack (show (mLayer m))), onChangeP ]
+    select [ id' "layer-select", onChangeP ]
       $ layerOption <$> [minBound..maxBound] ]
 
   where layerOption :: Monad m => Layer -> HtmlM m a
-        layerOption l = option [ value (pack (show l)) ] [ text (humanize l) ]
+        layerOption l = option [ value (pack (show l)), selected (l == mLayer m) ] [ text (humanize l) ]
 
         onChangeP :: MonadJSM m => (Text, PropM m Model)
-        onChangeP = listenRaw "onchange" onChangeHandler
+        onChangeP = listenRaw "change" onChangeHandler
 
         onChangeHandler :: MonadJSM m => RawNode -> RawEvent -> JSM (Continuation m Model)
-        onChangeHandler (RawNode selectNode) _ = return . kleisli $ \m -> liftJSM $ do
-          mv <- selectNode ! ("value" :: Text) >>= fromJSVal >>= return . join . fmap readMaybe
+        onChangeHandler (RawNode selectNode) _ = do
+         jsg "console" >>= ((# "log") >>> ($ "in change handler"))
+         return . kleisli $ \m -> liftJSM $ do
+          jsg "console" >>= ((# "log") >>> ($ "in change handler continuation"))
+          mv <- selectNode ! "value" >>= fromJSVal >>= return . join . fmap readMaybe
           case mv of
             Just l -> do
               forM_ (zip [minBound..maxBound] [0..numLayers-1]) $ \((l',i) :: (Layer, Int)) -> do
                 layer <- mLayers m !! i
-                (layer <# ("setVisible" :: Text)) =<< toJSVal (l' == l)
+                layer # "setVisible" =<< toJSVal (l' == l)
+              jsg "console" >>= ((# "log") >>> ($ "updated layer visibility to " <> pack (show l)))
               return . pur $ \m' -> m' { mLayer = l }
+            Nothing -> do
+              jsg "console" >>= ((# "error") >>> ($ "invalid select value"))
+              return (pur id)
 
 
 runApp :: JSM ()
@@ -126,14 +134,14 @@ runApp = do
   forM_ [1..numLayers-1] $ \(i :: Int) -> do
     li <- olLayers !! i
     li # "setVisible" =<< toJSVal False
-  simple runParDiff (Model (RawNode olMapNode) olLayers Aerial) view getBody
+  simple runParDiff (Model (RawNode olMapNode) olLayers RoadOnDemand) view getBody
   void $ log "appended map"
 
 
 main :: IO ()
 main = runJSorWarp 8080 $ do
   addStyle "https://cdn.jsdelivr.net/gh/openlayers/openlayers.github.io@master/en/v6.3.1/css/ol.css"
-  addInlineStyle (".map { width: 100%; height: 500px }" :: Text)
+  addInlineStyle ".map { width: 100%; height: 500px }"
   addScriptSrc "https://cdn.jsdelivr.net/gh/openlayers/openlayers.github.io@master/en/v6.3.1/build/ol.js"
   -- wait for dependencies to load, then run app
   win <- jsg "window"
