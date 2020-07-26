@@ -65,16 +65,13 @@ view m =
 
         onChangeHandler :: MonadJSM m => RawNode -> RawEvent -> JSM (Continuation m Model)
         onChangeHandler (RawNode selectNode) _ = do
-         jsg "console" >>= ((# "log") >>> ($ "in change handler"))
          return . kleisli $ \m -> liftJSM $ do
-          jsg "console" >>= ((# "log") >>> ($ "in change handler continuation"))
           mv <- selectNode ! "value" >>= fromJSVal >>= return . join . fmap readMaybe
           case mv of
             Just l -> do
               forM_ (zip [minBound..maxBound] [0..numLayers-1]) $ \((l',i) :: (Layer, Int)) -> do
                 layer <- mLayers m !! i
                 layer # "setVisible" =<< toJSVal (l' == l)
-              jsg "console" >>= ((# "log") >>> ($ "updated layer visibility to " <> pack (show l)))
               return . pur $ \m' -> m' { mLayer = l }
             Nothing -> do
               jsg "console" >>= ((# "error") >>> ($ "invalid select value"))
@@ -83,11 +80,7 @@ view m =
 
 runApp :: JSM ()
 runApp = do
-  console <- jsg "console"
-  let log x = console # "log" =<< toJSVal (x :: Text)
-  log "running app"
   infinity <- eval "Infinity"
-  console # "log" $ infinity
   win <- jsg "window"
   openLayers <- win ! "ol"
   olLayerCtor <- openLayers ! "layer" >>= (! "Tile")
@@ -96,32 +89,25 @@ runApp = do
   forM_ [minBound..maxBound] $ \(layer :: Layer) -> do
     olBingMapArgs <- obj
     (olBingMapArgs <# "key") =<< toJSVal "AmNkXbNpoH-6RYX42lfQcNzEXUXBSfDwPHJEAhDNH0EOToN99hKICJ4eq7K35BLh"
-    log (pack (show layer))
     (olBingMapArgs <# "imagerySet") =<< toJSVal (show layer)
-    
-    log "new BingMaps"
     olBingMap <- new olBingMapsCtor =<< toJSVal olBingMapArgs
     olLayerArgs <- obj
     olLayerArgs <# "visible" $ False
     olLayerArgs <# "preload" $ infinity
     (olLayerArgs <# "source") =<< toJSVal olBingMap
-    log "new Tile"
     olLayer <- toJSVal =<< new olLayerCtor =<< toJSVal olLayerArgs
     olLayers # "push" $ olLayer
   olViewCtor <- openLayers ! "View"
   olViewArgs <- obj
   olViewArgs <# "center" $ array [-6655.5402445057125 :: Double, 6709968.258934638]
   (olViewArgs <# "zoom") =<< toJSVal (13 :: Int)
-  log "new View"
   olView <- new olViewCtor =<< toJSVal olViewArgs
   olMapCtor <- openLayers ! "Map"
   olMapArgs <- obj
   (olMapArgs <# "target") =<< toJSVal "map"
   olMapArgs <# "view" $ olView
   olMapArgs <# "layers" $ olLayers
-  log "new Map"
    -- Insert map directly in DOM and bypass S11 in order to test up to this point
-  log "append map"
   doc <- win ! "document"
   bod <- doc ! "body"
   olMapNode <- doc # "createElement" =<< toJSVal "div"
@@ -135,7 +121,6 @@ runApp = do
     li <- olLayers !! i
     li # "setVisible" =<< toJSVal False
   simple runParDiff (Model (RawNode olMapNode) olLayers RoadOnDemand) view getBody
-  void $ log "appended map"
 
 
 main :: IO ()
